@@ -1,0 +1,3 @@
+interface GameOverData {
+  score: number
+}
