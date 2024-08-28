@@ -1,3 +1,7 @@
+<template>
+  <div id="game" class="min-w-[300px] min-h-[500px]"></div>
+</template>
+
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted } from 'vue'
 import Preloader from './scene/preload'
@@ -16,13 +20,13 @@ onMounted(() => {
     type: Phaser.AUTO,
     width: gameWidth,
     height: gameHeight,
-    parent: 'app',
+    parent: 'game',
     backgroundColor: '#fff',
     physics: {
       default: 'arcade',
       arcade: {
-        gravity: { x: 0, y: 0 },
-        debug: true
+        gravity: { x: 0, y: 0 }
+        // debug: true
       }
     },
     // 这里的Loader其实可以不要，因为这个游戏加载时间挺快的，但是既然做了，还是放这里吧

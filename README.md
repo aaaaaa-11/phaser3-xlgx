@@ -2,6 +2,8 @@
 
 贪吃蛇游戏
 
+![game](./screenshots/snake.gif)
+
 技术栈：
 
 - vue3
@@ -39,3 +41,5 @@ npm run test:unit
 ```sh
 npm run lint
 ```
+
+## [实现思路](./Index.md)

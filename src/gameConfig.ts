@@ -1,7 +1,7 @@
 // 游戏配置
 export const gameConfig = {
-  gameWidth: innerWidth,
-  gameHeight: innerHeight,
+  gameWidth: innerWidth > 300 ? innerWidth : 300,
+  gameHeight: innerHeight > 500 ? innerHeight : 500,
   defaultSpeed: 400,
   fastSpeed: 50,
   speedStep: 100
