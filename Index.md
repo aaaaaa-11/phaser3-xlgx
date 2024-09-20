@@ -1,303 +1,349 @@
 [主要代码](./src/scene/game.ts)
 
-1. new Phaser.Game(config)
+以下grid代表格子对象，block代表图案对象
 
-这里用的是arcade引擎
+## 1. 创建格子和图案
 
-2. 先创建preload场景，加载一些资源，如果加载时间长，可以做一个进度条了
-3. 创建游戏大厅，先放一个开始游戏按钮，点击切换到游戏场景先用scene.switch或者scene.start，后面改了，参考第10条
-4. 创建游戏场景，先把背景、得分、小蛇、食物创建出来
+确定行数row、列数col、图层数level
 
-这里使用setCircle设置贪吃蛇body为圆形
+每一层可放图案的格子有row \* col个
+
+总共可放图案的格子有 row \* col \* level个
+
+确定要放的图案种类blockTypes
+
+确定每种图案要放多少组blockGroups
+
+一共要放blockTypes \* blockGroups \* 3个图案
+
+每一层平均放blockTypes \* blockGroups \* 3 / level个
+
+可以每一层平均放也可以每一层放的数量不一样，但是**要确保每一层能放得下预计要放的，且总的图案数<=总的格子数**
+
+**1.1 确定图案索引**
 
 ```ts
-// 创建贪吃蛇
-createSnake() {
-  let img: PhysicsImage | PhysicsSprite
-  const diameter = snakeRadius * 2
-  // 因为我的贪吃蛇身体上有图案，看得出堆叠顺序，所以这里需要设置一下层级
-  // 如果从最后一节身体往头部生成，初始贪吃蛇从头到尾每一节身体都在后一节身体的上边，但是后面增长的身体还是会叠在上面
-  // 所以直接设置层级depth，要么蛇头设置一个很大的层级，蛇身依次depeth--，要么每次增长身体的时候需要重新设置，我这里用后者
-  for (let i = 0; i < defaultBodies; i++) {
-    if (i === 0) {
-    	// 因为头部后面会执行动画，所以用sprite
-      this.head = this.physics.add.sprite(0, 0, AssetKeys.Head1)
+let keys = Array(blockTypes * blockGroups * 3)
+  .fill(0)
+  .map((_, i) => i % blockTypes)
+// 例如2种图案blockTypes = 2，每种4组blockGroups = 4，总共 2 * 4 * 3个
+// [0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1]
+```
 
-      img = this.head
-      img.setCollideWorldBounds(true) // 边界碰撞
-    } else {
-      img = this.physics.add.image(0, 0, AssetKeys.Body)
+**1.2 打乱顺序**
+
+```ts
+keys = this.shuffle(keys)
+// [0, 0, 0, 1, 0, 1, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1]
+```
+
+**1.3 确定每一层有多少个图案**
+
+```ts
+const counts = Array(level - 1)
+  .fill(0)
+  .map((_, i) => avarageCount) // 可以随即放，也可以按某种规律放
+```
+
+**1.4 创建格子**
+
+```ts
+/* 
+grids: [
+  // 第一层
+  [
+    // 第一行
+    [
+      // 每一列都是一个格子对象grid
+      {}, {}, ...
+    ]
+    // 第二行...
+  ]
+  // 第二层...
+]
+*/
+// 遍历图层
+for (let l = 0; l < level; l++) {
+  const levelGrids: Grid[][] = []
+  const needOffset = l % 2 // 偶数层需要偏移
+  const offset = needOffset ? 0.5 : 0 // 偏移图案一半
+  for (let i = 0; i < rows; i++) {
+    if (needOffset && i === rows - 1) continue // 偶数层少铺设一行
+    for (let j = 0; j < cols; j++) {
+      if (needOffset && j === cols - 1) continue // 偶数层少铺设一列
+      const x = startX + blockWidth * (offset + j)
+      const y = startY + blockHeight * (offset + i)
+      if (!levelGrids[i]) {
+        levelGrids[i] = []
+      }
+
+      levelGrids[i].push({
+        // 格子对象
+        x,
+        y,
+        row: i,
+        col: j
+      })
     }
-
-    img
-      .setPosition(defaultX - bodyOffset * i, defaultY)
-      .setDisplaySize(diameter, diameter)
-      .setDepth(defaultBodies - i)
-    img.setCircle(img.width / 2)
-    this.snake.push(img)
   }
+  grids[l] = levelGrids
 }
 ```
 
-食物使用staticImage，并且也设置为圆形：
+第一层：
+
+![level1](./screenshots/grid-level1.png)
+
+铺上第二层：
+
+![level2](./screenshots/grid-level2.png)
+
+第2n+1层同第一层，第2n层同第二层
+
+**1.5 每一层根据设定的图案数量，创建图案并在该层随机取一个格子挂上**
 
 ```ts
-this.food = this.physics.add.staticImage(x, y, AssetKeys.Food)
-this.food.setCircle(this.food.width / 2)
+// 从当前层随机取一个格子(不重复)
+const randomIndex = Phaser.Math.Between(0, grids.length - 1)
+const grid = grids[randomIndex]
+// 创建block
+const { x, y } = grid
+const block = new Block(
+  this,
+  x,
+  y,
+  AssetKeys[`Block${keys.pop()}` as keyof typeof AssetKeys],
+  l + 1
+)
 
-// 如果使用setSize设置GameObject的尺寸：
-const diameter = foodRadius * 2
-this.food = this.physics.add.staticImage(x, y, AssetKeys.Food).setSize(diameter, diameter)
-// 需要将body的尺寸也设置成一致的
-this.food.setBodySize(this.food.width, this.food.height)
-this.food.setCircle(this.food.width / 2)
-
-// 如果使用setDisplaySize设置显示的尺寸
-const diameter = foodRadius * 2
-this.food = this.physics.add.staticImage(x, y, AssetKeys.Food).setDisplaySize(diameter, diameter)
-// body的坐标修改一下（尝试在setCircle中设置offset，但是StaticImage好像不会生效，所以这里换成改body坐标了）
-this.food.body.center.set(x, y)
-this.food.setCircle(foodRadius)
-// 或者直接修改body的左上角坐标
-// const { width, scale } = this.food
-// const offset = (width / 2) * (1 - scale)
-// this.food.body.x += offset
-// this.food.body.y += offset
-// this.food.setCircle((width * scale) / 2)
+// 将图案挂到格子上
+grid.block = block
+grids.splice(randomIndex, 1)
 ```
 
-后面将食物单独创建为一个类[foot.ts](./src/objects/food.ts)
-
-5. 监听鼠标/手指操作，计算顺着鼠标方向的路径
+**1.6 遮挡图案放上阴影**
 
 ```ts
-// 初始路径为界面蛇头位置延伸至右侧边界（即贪吃蛇默认向右移动）
-// 这里也可以用new Phaser.Curves.Path等设置路径
-this.path = new Phaser.Geom.Line(this.head.x, this.head.y, gameWidth, gameHeight / 2)
-```
+// 遍历所有格子，检查有图案的格子是否被遮挡，顶部被遮挡的要加阴影
+checkOverlaps() {
+  this.grids.forEach((levelGrids, l) => {
+    const lastLevel = l === gameConfig.level - 1
+    levelGrids.forEach((row) => {
+      row.forEach((col) => {
+        const block = col.block
+        if (!block) return
+        // 如果当前图案在最上层且有阴影，则删掉阴影
+        if (lastLevel && block.shadow) {
+          block.shadow?.destroy(true)
+          block.shadow = undefined
+        } else if (!lastLevel) {
+          // 如果当前图案不在最上层，检查其上是否有遮挡
+          const isOverlap = this.checkOverlap(col.row, col.col, l)
+          // 如果没有遮挡（如果有阴影则删除阴影），返回
+          if (!isOverlap) {
+            if (block.shadow) {
+              block.shadow.destroy(true)
+              block.shadow = undefined
+            }
+            return
+          }
 
-- 路径：
-  计算蛇头（prevX, prevY）与鼠标(nextX, nextY)角度，然后从蛇头沿着这个角度画线一直到边界上一点，就是贪吃蛇应该移动的路径，顺便将蛇头的角度更新一下
-  ![path](./screenshots/path.png)
+          if (block.shadow) {
+            // 如果有阴影，不用重复生成
+            return
+          }
 
-- 路径与边界的交点，即路径的终点
-  使用perimeterPoint(rect, angle, point)，需要保证蛇头在rect的中心点，然后沿着angle射向rect某条边上一点point，需要保证这点也在游戏边界上，假设白色为鼠标点，rect设置center为蛇头位置即可，关键是rect的宽高
-  1. 假设鼠标点在蛇头左侧，则rect左边不超过游戏左边界，可以设置rect左边为游戏左边界，宽度为蛇头距左边界的2倍
-     ![left point](./screenshots/leftPoint.png)
-  2. 假设鼠标在蛇头右侧，则rect右侧不超过游戏右边界，可以设置rect宽度为游戏右边界距蛇头距离的2倍
-     ![right point](./screenshots/rightPoint.png)
-  3. 鼠标在蛇头上、下部也由上面类似的思想计算出rect的高度
-     ![top point](./screenshots/topPoint.png)
-     ![bottom point](./screenshots/bottomPoint.png)
-
-或者以蛇头为中心，设置一个宽高为游戏界面2倍的矩形，这样算出的point点，角度是对的，但是会在游戏界面之外，这时可以设置边界碰撞使得贪吃蛇不会沿着轨迹点跑出界面
-
-其实移动贪吃蛇也可以直接设置速度（根据路径终点位置和路径长度就可以计算）
-
-```ts
-// 根据蛇头和当前鼠标点位计算路径（连线延伸至边界）
-caculatePath(nextX: number, nextY: number) {
-  if (this.gameState === GameStateKeys.GameOver) return
-  const { x: prevX, y: prevY } = this.head
-
-  // 计算两点之间的角度
-  const radius = Phaser.Math.Angle.Between(prevX, prevY, nextX, nextY)
-  const angle = (radius * 180) / Math.PI
-  this.head.angle = angle
-
-  // 找到对应边界上的点
-  const isLeft = prevX - nextX > 0
-  const isTop = prevY - nextY > 0
-  const width = isLeft ? prevX * 2 : (gameWidth - prevX) * 2
-  const height = isTop ? prevY * 2 : (gameHeight - prevY) * 2
-  const rect = new Phaser.Geom.Rectangle(0, 0, width, height)
-  rect.centerX = prevX
-  rect.centerY = prevY
-  // PerimeterPoint(rect, angle[, point])可以获取在矩形rect的中点沿着angle角度对应周长上的点，输出到point里
-  Phaser.Geom.Rectangle.PerimeterPoint(rect, angle, this.point)
-
-  // 画线：当前蛇头位置->点击处->边界上的点
-  this.path.setTo(prevX, prevY, this.point.x, this.point.y)
-
-  this.getPoints()
+          // 生成阴影
+          const mask = this.add
+            .rectangle(block.x, block.y, blockWidth, blockHeight, 0x000000, 0.5)
+            .setDepth(block.depth)
+          block.shadow = mask
+        }
+      })
+    })
+  })
 }
-```
 
-6. 根据路径计算轨迹点，小蛇稍后会沿着轨迹点移动
-
-```ts
-// 根据路径长度获取轨迹点
-getPoints() {
-  this.points = this.path.getPoints(0, bodyOffset)
-
-  this.points.push(this.point) // 边界上的点是最后一个轨迹点
-}
-```
-
-![points](./screenshots/points.png)
-
-7. 移动贪吃蛇（跟随轨迹点）
-
-```ts
-// 创建移动定时器
-moveTimer = this.time.addEvent({
-  delay: this.speed,
-  loop: true,
-  callback: () => this.moveSnake()
-})
-
-moveSnake() {
-  if (this.gameState === GameStateKeys.GameOver) return
-
-  // 贪吃蛇位置更新
-  // 蛇头按points轨迹运行，蛇身依次移动到前一个蛇身位置
-  // points[0]是蛇头当前位置，应该移动到下一个点(points[1])
-  try {
-    for (let i = this.snake.length - 1; i >= 0; i--) {
-      if (i === 0) {
-        this.snake[i].x = this.points[1].x
-        this.snake[i].y = this.points[1].y
-      } else {
-        this.snake[i].x = this.snake[i - 1].x
-        this.snake[i].y = this.snake[i - 1].y
+// 判断图像有没有被遮挡
+checkOverlap(row: number, col: number, level: number) {
+  const currIsOffset = level % 2 // 当前这层是否偏移
+  // 当前位置上面每一层都看看是否有遮挡
+  for (let i = level + 1; i < gameConfig.level; i++) {
+    const compareIsOffset = (i - level) % 2 // 两个图层之间是否相互偏移
+    const levelGrids = this.grids[i]
+    // 没有上面一层，则不会被遮挡
+    if (!levelGrids || !levelGrids.some((row) => row.some((col) => col.block))) {
+      continue
+    }
+    if (!compareIsOffset) {
+      // 对比两个不偏移的图层，只需要对比当前格子正上方有没有格子
+      // 这里可以返回true，也可以返回false，因为被不偏移的格子遮挡，会直接挡住，加不加阴影都无所谓
+      if (levelGrids[row][col].block) return true
+    } else {
+      // 对比相互偏移的图层，需要看有没有四个角上的格子，每个格子上有没有图案，有1个就算遮挡
+      const row1 = levelGrids[currIsOffset ? row : row - 1]
+      const row2 = levelGrids[currIsOffset ? row + 1 : row]
+      const col1 = currIsOffset ? col : col - 1
+      const col2 = currIsOffset ? col + 1 : col
+      if (row1 && (row1[col1]?.block || row1[col2]?.block)) {
+        return true
+      }
+      if (row2 && (row2[col1]?.block || row2[col2]?.block)) {
+        return true
       }
     }
-  } catch (error) {
+  }
+  return false
+}
+```
+
+## 2. 鼠标点击事件
+
+**2.1 监听block点击**
+
+```ts
+// 监听图案点击事件
+block.on('pointerdown', () => {
+  // 如果图案上没有阴影(最上面) && 允许点击
+  if (!block.shadow && !this.unableClick && this.gameState === GameStateKeys.Running) {
+    // 不能同时点击两个图案，先标记当前不可点击状态，然后设置当前点击图案放大，记录当前图案
+    this.unableClick = true
+    block.setScale(block.scaleX * 1.2, block.scaleY * 1.2)
+    this.currentBlock = block
+  }
+})
+block.on('pointerup', () => {
+  // 如果是在当前图案上抬起
+  if (this.currentBlock === block && this.gameState === GameStateKeys.Running) {
+    this.selectBlock(block, grid)
+  }
+})
+
+// 选中图案
+selectBlock(block: Block, grid: Grid) {
+  // 找到卡槽里合适的位置
+  const pos = this.putBlockIntrough(block)
+  const [x, y] = pos
+
+  // 放到下方卡槽里
+  block.x = x
+  block.y = y
+
+  // 放下block后检查是否需要合并
+  this.checkMerge(block.key)
+  this.unableClick = false
+  // 卡槽满了
+  if (this.troughBlocks.length >= troughConfig.troughCounts) {
     this.gameOver()
     return
   }
-  // 记录上一个轨迹点
-  this.prevPoint = this.points[0]
-  // 移动后丢弃轨迹第一个点
-  this.points.shift()
-
-  // 当移动到边界则游戏结束
-  if (
-    this.head.x <= this.head.width / 2 ||
-    this.head.y <= this.head.height / 2 ||
-    this.head.x >= gameWidth - this.head.width / 2 ||
-    this.head.y >= gameHeight - this.head.height / 2
-  ) {
+  if (!this.blockCounts) {
+    // 赢了
     this.gameOver()
     return
   }
+
+  // 删掉格子与图案的关联
+  grid.block = null
+  // 重新检查图案遮挡
+  this.checkOverlaps()
 }
 ```
 
-8. 检测蛇头和food碰撞，碰到就吃掉食物并得分
+**2.2 放置图案到卡槽**
+从右往左找到第一个与block相同图案的索引last，block需要放到last+1位置，但是在放之前要先把last+1及之后位置上的图案（如果有的话）向后移动一格
+![放置图案到卡槽（有相同图案）](./screenshots/put-block1.png)
+
+如果卡槽里没有与block相同的图案，则直接将block放到最后
+![放置图案到卡槽（没有相同图案）](./screenshots/put-block2.png)
 
 ```ts
-// 监听蛇头和食物碰撞
-this.physics.add.overlap(this.food, this.head, this.eatFood, undefined, this)
-
-// 吃到食物
-eatFood() {
-  // if (this.eating) return
-  // this.eating = true
-  // this.head.play(AnimationKeys.Eating).on('animationcomplete', () => {
-  //   // 完成“吃”动作后再更新食物位置，但是效果不好
-  //   this.updateFoodPos()
-  //   this.eating = false
-  // })
-  // “吃”动画
-  this.head.play(AnimationKeys.Eating)
-
-  // 贪吃蛇身体增长一节
-  this.createBody()
-  // 得分
-  this.addScore()
-
-  // 吃了速度增加，这里我做了最快速度限制
-  if (this.speed > gameConfig.fastSpeed + gameConfig.speedStep) this.speed -= gameConfig.speedStep
-  else {
-    this.speed = gameConfig.fastSpeed
+// 找到卡槽里适合放当前block的位置
+putBlockIntrough(block: Block): [number, number] {
+  // 从右往左找到与当前block图案相同的索引
+  let last = this.troughBlocks.findLastIndex((b) => b.key === block.key)
+  // 如果没找到，就用最右边的图案索引
+  if (last <= -1) {
+    last = this.troughBlocks.length - 1
   }
-
-  // 因为我这里速度是通过this.time.addEvent控制，这里更新一下速度
-  moveTimer.reset({
-    delay: this.speed,
-    callback: () => {
-      this.moveSnake()
-    },
-    loop: true
-  })
-
-  this.updateFoodPos()
+  // 放置当前block的索引 = 找到的索引下一个
+  const index = last + 1
+  // block的位置
+  const x = this.trough.x + troughConfig.padding + blockWidth * (index + 0.5)
+  const y = this.trough.y
+  // 如果要放置的位置上已经有别的block了，则将这个位置及之后的block向右移动一格
+  if (this.troughBlocks[index]) {
+    const len = this.troughBlocks.length
+    for (let i = len - 1; i >= index; i--) {
+      this.troughBlocks[i].x += blockWidth
+      this.troughBlocks[i + 1] = this.troughBlocks[i]
+    }
+  }
+  // index上放block
+  this.troughBlocks[index] = block
+  return [x, y]
 }
 ```
 
-9. 更新食物位置
+**2.3 检查卡槽里的图案合并**
 
-获取一个随机不与贪吃蛇重叠的位置（因为我界面上添加了得分文字，所以这里也检测了遮挡）
+如果卡槽里有三个与上面放置的block相同的图案，则合并
+![合并](./screenshots/merge.png)
 
 ```ts
-getRandomPos(
-  snakePos: number[][],
-  snakeDistance: number,
-  scoreX: number,
-  scoreY: number,
-  scoreDistance: number
-): [number, number] {
-  this.checkOverlapCount++
-  // 随机位置生成一个圆
-  const randomX = Phaser.Math.Between(foodRadius, gameWidth - foodRadius)
-  const randomY = Phaser.Math.Between(foodRadius, gameHeight - foodRadius)
+// 检查合并
+checkMerge(key: string) {
+  // 在卡槽中找到第一个和当前block key相同的图案索引
+  const index = this.troughBlocks.findIndex((b) => b.key === key)
+  const pos = this.troughBlocks.map((i) => i.x)
+  // 如果该索引后第二个也是该图案（三个一样的key），则需要合并
+  if (this.troughBlocks[index + 2]?.key === key) {
+    // 从第一个key位置开始向右侧遍历
+    const len = this.troughBlocks.length
+    for (let i = index; i < len; i++) {
+      let block: Block | undefined // 指向第i个block
+      // 第i+3的位置上有block，则移除i位置上的block，将该i+3的block移到i位置上
+      const hasMoveItem = i + 3 < len
+      if (hasMoveItem) {
+        const moveItem = this.troughBlocks[i + 3]
+        // 合并的三个
+        block = this.troughBlocks.splice(i, 1, moveItem)[0] // 用i后第三个替换i位置的元素
+        this.tweens.add({
+          targets: moveItem,
+          x: pos[i], // 交换两者位置
+          duration: 100,
+          delay: 200
+        })
+      } else {
+        block = this.troughBlocks[i]
+      }
+      // 合并的三个移出来销毁
+      if (i < index + 3) {
+        const mergeBlock = new MergeBlock(this, block.x, block.y)
+        block.destroy(true)
+        mergeBlock.play(AnimationKeys.Merge).on('animationcomplete', () => {
+          mergeBlock.destroy(true)
+        })
+      }
+    }
+    // 修改卡槽和总的block数量
+    this.blockCounts -= 3
+    this.troughBlocks.length -= 3
 
-  if (this.checkOverlapCount > 100) {
-    // 如果这个函数被调用很多次，会报错：Maximum call stack size exceeded
-    // 所以这里限制随机取100次都重叠，则直接返回该坐标
-    // 也可以不返回这个会重叠的坐标，而是按某种规律找到一个不重叠的位置，例如从左到右、从上到下扫一遍，如果都没有不重叠的位置，说明贪吃蛇已经铺满屏幕了
-    return [randomX, randomY]
+    this.addScore()
   }
-  // 食物不能被得分遮挡
-  // 检测重叠也可以用：this.physics.world.intersects(body1, body2)等方法，这里我用自己实现的方法
-  if (this.isOverlap(scoreX, scoreY, randomX, randomY, scoreDistance)) {
-    return this.getRandomPos(snakePos, snakeDistance, scoreX, scoreY, scoreDistance)
-  }
-  // 检查贪吃蛇每一节是否与预生成的食物重叠
-  const contain = snakePos.some(([x, y], i) => {
-    return this.isOverlap(x, y, randomX, randomY, snakeDistance)
-  })
-
-  // 如果重叠，则重新生成一个随机位置
-  if (contain) {
-    return this.getRandomPos(snakePos, snakeDistance, scoreX, scoreY, scoreDistance)
-  } else {
-    return [randomX, randomY]
-  }
-}
-
-// 判断是否重叠，圆心(x1, x2)与圆心(y1, y2)之间的距离是否大于distance
-isOverlap(x1: number, y1: number, x2: number, y2: number, distance: number) {
-  const [maxX, minX] = x1 > x2 ? [x1, x2] : [x2, x1]
-  const [maxY, minY] = y1 > y2 ? [y1, y2] : [y2, y1]
-  const x = maxX - minX
-  const y = maxY - minY
-  if (x > distance || y > distance) return false
-  return Math.sqrt(x * x + y * y) < distance
 }
 ```
 
-10. 场景切换
+因为鼠标在图案上按下，图案就会放大，鼠标抬起时，不管在不在开始按下的图案上，都需要将放大的图案还原
 
 ```ts
-// Phaser.Scenes.ScenePlugin
-// 1. switch
-this.scene.switch(SCENE_KEY) // 切换到指定场景SCENE_KEY = this.scene.start(SCENE_KEY) + this.scene.sleep()，也就是当前场景休眠，运行指定场景
-                              // 下次场景管理器更新时执行，不会马上执行，下面除了setVisible都是
+this.input.on('pointerup', this.onPointerUp, this)
 
-// 2. start
-this.scene.start([SCENE_KEY, data]) // 关闭当前场景，运行指定场景
-
-// 3. run
-this.scene.run([SCENE_KEY]) // 运行指定场景，但是不会关闭当前场景，如果指定场景暂停/休眠/未运行，将会恢复/唤醒/运行
-
-// 4. setVisible
-this.scene.setVisible(bool[, SCENE_KEY]) // 切换指定场景显示状态
-
-// 5. sleep/wake
-this.scene.sleep([SCENE_KEY]) // 场景休眠（不更新，不渲染，但是不关闭）
-this.scene.wake([SCENE_KEY]) // 唤醒场景 (starts update and render)
+onPointerUp() {
+  // 恢复格子样式
+  this.currentBlock?.setDisplaySize(blockWidth, blockHeight)
+  this.unableClick = false
+  this.currentBlock = undefined
+}
 ```
-
-因为不想每次从游戏场景切换到其他场景都销毁游戏场景（下次切换回来还需要重建游戏场景中的对象），所以游戏场景第一次用start，之后每次setVisible，但是原来的场景还在，例如Main -> Game，Main场景里的开始按钮还在Game游戏场景界面中（只是不显示），在玩游戏的时候会点到按钮，就会重新开始游戏，可以每次切换到游戏场景场景就将Main场景休眠，要切换回来就wake或run一下

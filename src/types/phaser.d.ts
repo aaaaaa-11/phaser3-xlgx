@@ -2,7 +2,6 @@
 
 type Image = Phaser.GameObjects.Image
 type Sprite = Phaser.GameObjects.Sprite
-type StaticImage = Phaser.GameObjects.GameObject.StaticImage
 
 type PhysicsImage = Phaser.Types.Physics.Arcade.ImageWithDynamicBody
 type PhysicsSprite = Phaser.Types.Physics.Arcade.SpriteWithDynamicBody

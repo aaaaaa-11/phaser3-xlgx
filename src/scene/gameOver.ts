@@ -20,14 +20,21 @@ export default class Preloader extends Phaser.Scene {
 
   create(data: GameOverData) {
     // 背景
-    this.text = this.add.text(0, gameHeight / 2 - 100, `游戏结束，得分: ${data.score}`, {
-      fontSize: '32px',
-      color: '#fff',
-      align: 'center',
-      padding: { top: 10 },
-      fixedWidth: gameWidth,
-      fixedHeight: 100
-    })
+    this.text = this.add.text(
+      0,
+      gameHeight / 2 - 100,
+      `${data.win ? '恭喜！' : '游戏结束，'}得分: ${data.score}`,
+      {
+        fontSize: '32px',
+        strokeThickness: 4,
+        stroke: '#000',
+        color: '#fff',
+        align: 'center',
+        padding: { top: 10 },
+        fixedWidth: gameWidth,
+        fixedHeight: 100
+      }
+    )
     // 重新游戏按钮
     this.addBtn = this.add
       .image(gameWidth / 2, gameHeight / 2, AssetKeys.RestartBtn)

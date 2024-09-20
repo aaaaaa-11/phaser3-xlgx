@@ -1,5 +1,5 @@
 <template>
-  <div id="game" class="min-w-[300px] min-h-[500px]"></div>
+  <div id="game" class="min-w-[400px] min-h-[600px]"></div>
 </template>
 
 <script setup lang="ts">

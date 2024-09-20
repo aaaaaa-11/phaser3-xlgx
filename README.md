@@ -1,8 +1,6 @@
-# phaser-snake
+# phaser-xlgx
 
-贪吃蛇游戏
-
-![game](./screenshots/snake.gif)
+X了个X游戏
 
 技术栈：
 

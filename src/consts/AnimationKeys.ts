@@ -1,3 +1,3 @@
 export default {
-  Eating: 'eating'
+  Merge: 'merge'
 }
